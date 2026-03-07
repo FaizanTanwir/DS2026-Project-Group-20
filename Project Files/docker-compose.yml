@@ -1,0 +1,121 @@
+services:
+
+  mqtt-broker:
+    platform: linux/amd64
+    image: eclipse-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+    - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  redis:
+    platform: linux/amd64
+    image: redis:7
+    ports:
+    - "6379:6379"
+
+  postgres:
+    platform: linux/amd64
+    image: postgres:15
+    environment:
+      POSTGRES_USER: iotuser
+      POSTGRES_PASSWORD: iotpass
+      POSTGRES_DB: iotdb
+    ports:
+      - "5433:5432" # changed host port from 5432 to 5433 to avoid conflict with local Postgres which is already using 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  cloud:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: cloud/Dockerfile
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./ml_models:/ml_models 
+    environment:
+      - PYTHONWARNINGS=ignore
+    depends_on:
+      - postgres
+      - spark-master
+
+  gateway:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    # ports:
+    #   - "8000:8000" # Gateway API is not exposed externally to let shared subscription between multiple gateways.
+    volumes:
+      - ./gateway:/app   # bind mount for live code
+      - ./ml_models:/ml_models # edge model exists in the local directory
+    environment:
+      - PYTHONWARNINGS=ignore
+    depends_on:
+      - mqtt-broker
+      - cloud
+
+  nginx:
+    platform: linux/amd64
+    image: nginx:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - gateway
+
+  middleware:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: middleware/Dockerfile
+    ports:
+      - "7000:7000"
+    depends_on:
+      - redis
+      - nginx
+      - postgres
+
+  spark-master:
+    platform: linux/amd64
+    image: apache/spark:3.5.1
+    container_name: spark-master
+    user: "0"
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.master.Master
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+      - ./ml_models:/ml_models
+
+  spark-worker:
+    platform: linux/amd64
+    image: apache/spark:3.5.1
+    container_name: spark-worker
+    user: "0"
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+    depends_on:
+      - spark-master
+    volumes:
+      - ./ml_models:/ml_models
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./grafana:/var/lib/grafana
+
+volumes:
+  postgres_data:
