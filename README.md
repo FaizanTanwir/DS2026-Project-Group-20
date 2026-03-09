@@ -3,7 +3,7 @@
 ## Group 20
 ### Members:
 1. Arshman Tariq (2509523)
-2. Juuso Antero Alatalo (Y6909125)
+2. Juuso Antero Alatalo (Y69019235) - corrected student number
 3. Muhammad Faizan Tanveer (2509524)
 4. Seyedehsahar Fatemi Abhari (2508265)
 
